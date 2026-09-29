@@ -97,7 +97,7 @@ class EchoMusicCard extends HTMLElement {
   }
 
   _applyColors(color1, color2) {
-    const brightColor1 = this._ensureContrast(color1, 0.54, 0.65);
+    const brightColor1 = this._ensureContrast(color1, 0.46, 0.52);
     this._colors = { color1: brightColor1, color2 };
     this.style.setProperty('--c1', brightColor1);
     this.style.setProperty('--c2', color2);
@@ -180,17 +180,17 @@ class EchoMusicCard extends HTMLElement {
     };
   }
 
-  _ensureContrast(hex, minL = 0.54, minS = 0.65) {
+  _ensureContrast(hex, minL = 0.46, minS = 0.52) {
     if (!hex || typeof hex !== 'string' || !hex.startsWith('#')) return '#64748b';
     let r = parseInt(hex.slice(1, 3), 16) || 0;
     let g = parseInt(hex.slice(3, 5), 16) || 0;
     let b = parseInt(hex.slice(5, 7), 16) || 0;
     const hsl = this._rgbToHsl(r, g, b);
     if (hsl.s > 0.18) {
-      hsl.l = Math.max(minL, Math.min(0.72, hsl.l));
-      hsl.s = Math.max(minS, Math.min(0.95, hsl.s));
+      hsl.l = Math.max(minL, Math.min(0.64, hsl.l));
+      hsl.s = Math.max(minS, Math.min(0.88, hsl.s));
     } else {
-      hsl.l = Math.max(0.50, Math.min(0.70, hsl.l));
+      hsl.l = Math.max(0.48, Math.min(0.65, hsl.l));
     }
     const rgb = this._hslToRgb(hsl.h, hsl.s, hsl.l);
     return '#' + [rgb.r, rgb.g, rgb.b].map(v => Math.min(255, Math.max(0, v)).toString(16).padStart(2, '0')).join('');
@@ -313,6 +313,19 @@ class EchoMusicCard extends HTMLElement {
         weight *= 0.1;
       }
 
+      // Option 1: Center weighting & border dampening (border margins, especially bottom ground/grass)
+      const px = (i / 4) % 36;
+      const py = Math.floor((i / 4) / 36);
+      const normX = px / 35;
+      const normY = py / 35;
+      const borderDistX = Math.min(normX, 1 - normX);
+      const borderDistY = Math.min(normY, 1 - normY);
+      const borderFactor = Math.min(1.0, Math.min(borderDistX, borderDistY) / 0.18);
+      const dy = Math.abs(normY - 0.45);
+      const dx = Math.abs(normX - 0.5);
+      const centerFactor = Math.max(0.35, 1.25 - (dx * 1.2 + dy * 1.5));
+      weight *= (borderFactor * centerFactor);
+
       // Quantize to steps of 20
       const qr = Math.min(255, Math.round(r / 20) * 20);
       const qg = Math.min(255, Math.round(g / 20) * 20);
@@ -360,7 +373,7 @@ class EchoMusicCard extends HTMLElement {
 
     const toHex = (c) => '#' + [c.r, c.g, c.b].map(v => Math.min(255, Math.max(0, v)).toString(16).padStart(2, '0')).join('');
     return {
-      color1: this._ensureContrast(toHex(c1), 0.54, 0.65),
+      color1: this._ensureContrast(toHex(c1), 0.46, 0.52),
       color2: toHex(c2)
     };
   }
