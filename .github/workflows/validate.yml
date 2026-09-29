@@ -18,3 +18,4 @@ jobs:
         uses: hacs/action@main
         with:
           category: plugin
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

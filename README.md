@@ -7,7 +7,7 @@
 
 A high-fidelity, full-screen touch player card for [Home Assistant](https://www.home-assistant.io/) Lovelace dashboards with automatic ambient cover color glow. Perfectly optimized for Echo Show displays (via Fully Kiosk / Silk), wall-mounted tablets, and desktop dashboards.
 
-![Echo Music Card Preview](preview.png)
+![Echo Music Card Preview](https://raw.githubusercontent.com/sajiko5821/echo-music-card/main/preview.png)
 
 ---
 
