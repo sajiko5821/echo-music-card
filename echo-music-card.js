@@ -1,5 +1,5 @@
 /**
- * Spotify Show Card - Premium Music Display for Home Assistant
+ * Echo Music Card - Premium Music Display for Home Assistant
  * Designed for Touch Displays (Echo Show, Tablets) and Desktops
  * 
  * Features:
@@ -8,7 +8,7 @@
  * - Full-screen responsive touch UI with seekbar, volume control, track metadata, and clock.
  */
 
-class SpotifyShowCard extends HTMLElement {
+class EchoMusicCard extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: 'open' });
@@ -25,7 +25,7 @@ class SpotifyShowCard extends HTMLElement {
 
   setConfig(config) {
     if (!config || !config.entity) {
-      console.warn('[SpotifyShowCard] No entity specified, defaulting to media_player.spotify');
+      console.warn('[EchoMusicCard] No entity specified, defaulting to media_player.spotify');
     }
     this._config = {
       entity: 'media_player.spotify',
@@ -139,8 +139,8 @@ class SpotifyShowCard extends HTMLElement {
     if (!pictureUrl) {
       return Promise.resolve({ color1: '#64748b', color2: '#1e293b' });
     }
-    if (SpotifyShowCard._colorCache.has(pictureUrl)) {
-      return Promise.resolve(SpotifyShowCard._colorCache.get(pictureUrl));
+    if (EchoMusicCard._colorCache.has(pictureUrl)) {
+      return Promise.resolve(EchoMusicCard._colorCache.get(pictureUrl));
     }
 
     return new Promise((resolve) => {
@@ -150,7 +150,7 @@ class SpotifyShowCard extends HTMLElement {
         try {
           const colors = this._extractFromCanvas(domImg);
           if (colors) {
-            SpotifyShowCard._colorCache.set(pictureUrl, colors);
+            EchoMusicCard._colorCache.set(pictureUrl, colors);
             return resolve(colors);
           }
         } catch (e) {
@@ -176,13 +176,13 @@ class SpotifyShowCard extends HTMLElement {
         try {
           const colors = this._extractFromCanvas(img);
           if (colors) {
-            SpotifyShowCard._colorCache.set(pictureUrl, colors);
+            EchoMusicCard._colorCache.set(pictureUrl, colors);
             resolve(colors);
           } else {
             resolve({ color1: '#64748b', color2: '#1e293b' });
           }
         } catch (err) {
-          console.warn('[SpotifyShowCard] Canvas extract error:', err);
+          console.warn('[EchoMusicCard] Canvas extract error:', err);
           resolve({ color1: '#64748b', color2: '#1e293b' });
         }
       };
@@ -190,7 +190,7 @@ class SpotifyShowCard extends HTMLElement {
       img.onload = onDone;
       img.onerror = (err) => {
         clearTimeout(timeout);
-        console.warn('[SpotifyShowCard] Failed to load cover image:', pictureUrl, err);
+        console.warn('[EchoMusicCard] Failed to load cover image:', pictureUrl, err);
         resolve({ color1: '#64748b', color2: '#1e293b' });
       };
 
@@ -377,7 +377,7 @@ class SpotifyShowCard extends HTMLElement {
     try {
       this._hass.callService(domain, service, data);
     } catch (err) {
-      console.error(`[SpotifyShowCard] callService error (${domain}.${service}):`, err);
+      console.error(`[EchoMusicCard] callService error (${domain}.${service}):`, err);
     }
   }
 
@@ -474,7 +474,7 @@ class SpotifyShowCard extends HTMLElement {
         </style>
         <div class="missing-card">
           <ha-icon icon="mdi:music-off" style="--mdc-icon-size: 48px; opacity: 0.5; margin-bottom: 12px;"></ha-icon>
-          <h2 style="margin: 0 0 8px 0;">Spotify Show Card</h2>
+          <h2 style="margin: 0 0 8px 0;">Echo Music Card</h2>
           <p style="margin: 0; opacity: 0.7;">Entität <code>${this._config.entity}</code> wurde nicht gefunden.</p>
         </div>
       `;
@@ -1128,11 +1128,11 @@ class SpotifyShowCard extends HTMLElement {
             const colors = this._extractFromCanvas(coverImg);
             if (colors) {
               const currentPic = this._hass?.states[this._config.entity]?.attributes?.entity_picture;
-              if (currentPic) SpotifyShowCard._colorCache.set(currentPic, colors);
+              if (currentPic) EchoMusicCard._colorCache.set(currentPic, colors);
               this._applyColors(colors.color1, colors.color2);
             }
           } catch (e) {
-            console.warn('[SpotifyShowCard] Could not sample DOM cover:', e);
+            console.warn('[EchoMusicCard] Could not sample DOM cover:', e);
           }
         }
       };
@@ -1237,10 +1237,16 @@ class SpotifyShowCard extends HTMLElement {
   }
 }
 
-customElements.define('spotify-show-card', SpotifyShowCard);
+customElements.define('echo-music-card', EchoMusicCard);
+
+// Backward compatibility alias so existing configs continue to work seamlessly
+if (!customElements.get('spotify-show-card')) {
+  customElements.define('spotify-show-card', class extends EchoMusicCard {});
+}
+
 window.customCards = window.customCards || [];
 window.customCards.push({
-  type: 'spotify-show-card',
-  name: 'Spotify Show Card',
-  description: 'Full-screen hi-fi Spotify player card with automatic cover color glow'
+  type: 'echo-music-card',
+  name: 'Echo Music Card',
+  description: 'Full-screen hi-fi music player card with automatic cover color glow'
 });
