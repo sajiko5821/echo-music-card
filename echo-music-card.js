@@ -97,13 +97,14 @@ class EchoMusicCard extends HTMLElement {
   }
 
   _applyColors(color1, color2) {
-    this._colors = { color1, color2 };
-    this.style.setProperty('--c1', color1);
+    const brightColor1 = this._ensureContrast(color1, 0.54, 0.65);
+    this._colors = { color1: brightColor1, color2 };
+    this.style.setProperty('--c1', brightColor1);
     this.style.setProperty('--c2', color2);
 
     const wrapper = this.shadowRoot?.querySelector('.player-wrapper');
     if (wrapper) {
-      wrapper.style.setProperty('--c1', color1);
+      wrapper.style.setProperty('--c1', brightColor1);
       wrapper.style.setProperty('--c2', color2);
     }
 
@@ -111,7 +112,7 @@ class EchoMusicCard extends HTMLElement {
     const ambientBg = this.shadowRoot?.querySelector('.ambient-bg');
     if (ambientBg) {
       ambientBg.style.background = `
-        radial-gradient(circle at 25% 40%, ${color1} 0%, transparent 45%),
+        radial-gradient(circle at 25% 40%, ${brightColor1} 0%, transparent 45%),
         radial-gradient(circle at 75% 60%, ${color2} 0%, transparent 45%),
         radial-gradient(circle at 50% 10%, rgba(255,255,255,0.06) 0%, transparent 50%),
         #0b0d10
@@ -120,19 +121,79 @@ class EchoMusicCard extends HTMLElement {
 
     const playPauseBtn = this.shadowRoot?.querySelector('.btn-play-pause');
     if (playPauseBtn) {
-      playPauseBtn.style.background = `linear-gradient(135deg, ${color1} 0%, ${color2} 100%)`;
-      playPauseBtn.style.boxShadow = `0 8px 24px -4px ${color1}, 0 4px 12px rgba(0,0,0,0.5)`;
+      playPauseBtn.style.background = `linear-gradient(135deg, ${brightColor1} 0%, ${color2} 100%)`;
+      playPauseBtn.style.boxShadow = `0 8px 24px -4px ${brightColor1}, 0 4px 12px rgba(0,0,0,0.5)`;
     }
 
     const seekbarFill = this.shadowRoot?.querySelector('#progress-bar-fill');
     if (seekbarFill) {
-      seekbarFill.style.background = `linear-gradient(90deg, ${color1} 0%, ${color2} 100%)`;
+      seekbarFill.style.background = `linear-gradient(90deg, ${brightColor1} 0%, ${color2} 100%)`;
     }
 
     const coverArt = this.shadowRoot?.querySelector('.cover-art');
     if (coverArt) {
-      coverArt.style.boxShadow = `0 16px 40px -10px rgba(0,0,0,0.7), 0 24px 60px -15px ${color1}`;
+      coverArt.style.boxShadow = `0 16px 40px -10px rgba(0,0,0,0.7), 0 24px 60px -15px ${brightColor1}`;
     }
+  }
+
+  _rgbToHsl(r, g, b) {
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    let h = 0, s = 0;
+    const l = (max + min) / 2;
+    if (max !== min) {
+      const d = max - min;
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      switch (max) {
+        case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+        case g: h = (b - r) / d + 2; break;
+        case b: h = (r - g) / d + 4; break;
+      }
+      h /= 6;
+    }
+    return { h, s, l };
+  }
+
+  _hslToRgb(h, s, l) {
+    let r, g, b;
+    if (s === 0) {
+      r = g = b = l;
+    } else {
+      const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+      const p = 2 * l - q;
+      const hue2rgb = (p, q, t) => {
+        if (t < 0) t += 1;
+        if (t > 1) t -= 1;
+        if (t < 1/6) return p + (q - p) * 6 * t;
+        if (t < 1/2) return q;
+        if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+        return p;
+      };
+      r = hue2rgb(p, q, h + 1/3);
+      g = hue2rgb(p, q, h);
+      b = hue2rgb(p, q, h - 1/3);
+    }
+    return {
+      r: Math.round(r * 255),
+      g: Math.round(g * 255),
+      b: Math.round(b * 255)
+    };
+  }
+
+  _ensureContrast(hex, minL = 0.54, minS = 0.65) {
+    if (!hex || typeof hex !== 'string' || !hex.startsWith('#')) return '#1ed760';
+    let r = parseInt(hex.slice(1, 3), 16) || 0;
+    let g = parseInt(hex.slice(3, 5), 16) || 0;
+    let b = parseInt(hex.slice(5, 7), 16) || 0;
+    const hsl = this._rgbToHsl(r, g, b);
+    if (hsl.s > 0.1) {
+      hsl.l = Math.max(minL, Math.min(0.72, hsl.l));
+      hsl.s = Math.max(minS, Math.min(0.95, hsl.s));
+    } else {
+      hsl.l = Math.max(0.75, hsl.l);
+    }
+    const rgb = this._hslToRgb(hsl.h, hsl.s, hsl.l);
+    return '#' + [rgb.r, rgb.g, rgb.b].map(v => Math.min(255, Math.max(0, v)).toString(16).padStart(2, '0')).join('');
   }
 
   _extractColors(pictureUrl) {
@@ -230,20 +291,26 @@ class EchoMusicCard extends HTMLElement {
       const d = max - min;
       const lum = (max + min) / 510;
 
-      // Handle numerical instability in HSL: if RGB difference is tiny or near extremes, saturation is effectively 0
+      // Handle numerical instability in HSL: calculate saturation accurately
       let sat = 0;
-      if (d >= 10 && lum >= 0.08 && lum <= 0.92) {
+      if (d >= 8 && lum >= 0.05 && lum <= 0.95) {
         sat = d / (lum > 0.5 ? (510 - max - min) : (max + min));
       }
       if (sat > maxSat) maxSat = sat;
 
-      // Give high preference to saturated, vibrant colors
-      // Reduce weight of near-white and near-black backgrounds
-      let weight = 1 + (sat * 4);
-      if (lum > 0.82) {
-        weight *= 0.1; // heavily de-prioritize white album backgrounds
-      } else if (lum < 0.12) {
-        weight *= 0.2; // de-prioritize black backgrounds
+      // Give high preference to saturated, vibrant midtones
+      // Heavily penalize achromatic pixels (black, gray, white backgrounds)
+      let weight;
+      if (sat < 0.15) {
+        weight = 0.02; // heavily de-prioritize neutral/dark backgrounds
+      } else {
+        const lumBell = Math.max(0.1, 1.0 - Math.abs(lum - 0.5) * 1.5);
+        weight = Math.pow(sat, 1.8) * 20 * lumBell;
+      }
+
+      // Extra suppression for extreme dark (<0.15) and extreme light (>0.85)
+      if (lum < 0.15 || lum > 0.85) {
+        weight *= 0.1;
       }
 
       // Quantize to steps of 20
@@ -261,13 +328,12 @@ class EchoMusicCard extends HTMLElement {
     }
 
     if (buckets.size === 0 || count === 0) {
-      return { color1: '#64748b', color2: '#1e293b' };
+      return { color1: '#1ed760', color2: '#124424' };
     }
 
     // If the cover is almost completely monochromatic / greyscale (e.g. white/grey/black cover)
     if (maxSat < 0.12) {
-      // Sleek modern monochromatic / dark slate theme
-      return { color1: '#64748b', color2: '#1e293b' };
+      return { color1: '#1ed760', color2: '#124424' };
     }
 
     // Sort by weighted score
@@ -287,15 +353,16 @@ class EchoMusicCard extends HTMLElement {
 
     // If monochromatic within the cluster, generate a complementary shifted tone
     if (!c2) {
-      c2 = {
-        r: Math.min(255, Math.max(0, Math.round(c1.r * 0.7 + 30))),
-        g: Math.min(255, Math.max(0, Math.round(c1.g * 0.6 + 40))),
-        b: Math.min(255, Math.max(0, Math.round(c1.b * 1.2 + 50)))
-      };
+      const h1 = this._rgbToHsl(c1.r, c1.g, c1.b);
+      const shifted = this._hslToRgb((h1.h + 0.15) % 1.0, Math.max(0.5, h1.s), Math.max(0.25, h1.l * 0.7));
+      c2 = { r: shifted.r, g: shifted.g, b: shifted.b };
     }
 
     const toHex = (c) => '#' + [c.r, c.g, c.b].map(v => Math.min(255, Math.max(0, v)).toString(16).padStart(2, '0')).join('');
-    return { color1: toHex(c1), color2: toHex(c2) };
+    return { 
+      color1: this._ensureContrast(toHex(c1), 0.54, 0.65), 
+      color2: toHex(c2) 
+    };
   }
 
   _formatTime(seconds) {
@@ -886,11 +953,24 @@ class EchoMusicCard extends HTMLElement {
           height: 48px;
           border-radius: 50%;
           color: rgba(255, 255, 255, 0.65);
+          position: relative;
         }
 
         .btn-secondary.active {
-          color: var(--c1);
-          background: rgba(255, 255, 255, 0.08);
+          color: var(--c1, #1ed760);
+          background: rgba(255, 255, 255, 0.12);
+          box-shadow: 0 0 16px -2px var(--c1, rgba(30, 215, 96, 0.35));
+        }
+
+        .btn-secondary.active::after {
+          content: '';
+          position: absolute;
+          bottom: 5px;
+          width: 4px;
+          height: 4px;
+          border-radius: 50%;
+          background: var(--c1, #1ed760);
+          box-shadow: 0 0 6px var(--c1, #1ed760);
         }
 
         .btn-skip {
@@ -1243,7 +1323,6 @@ customElements.define('echo-music-card', EchoMusicCard);
 if (!customElements.get('spotify-show-card')) {
   customElements.define('spotify-show-card', class extends EchoMusicCard {});
 }
-
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: 'echo-music-card',
