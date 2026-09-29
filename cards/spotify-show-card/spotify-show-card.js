@@ -1,6 +1,11 @@
 /**
  * Spotify Show Card - Premium Music Display for Home Assistant
  * Designed for Touch Displays (Echo Show, Tablets) and Desktops
+ * 
+ * Features:
+ * - Standalone Cover Color Extraction: Automatically extracts vibrant background glow colors
+ *   directly from the album art inside the browser (no external integrations or helper entities needed).
+ * - Full-screen responsive touch UI with seekbar, volume control, track metadata, and clock.
  */
 
 class SpotifyShowCard extends HTMLElement {
@@ -11,17 +16,25 @@ class SpotifyShowCard extends HTMLElement {
     this._dragPercent = 0;
     this._timer = null;
     this._lastStateKey = null;
+    this._lastPicture = null;
+    this._colors = { color1: '#e05260', color2: '#6b46c1' };
   }
 
+  // Global cache across renders and card instances
+  static _colorCache = new Map();
+
   setConfig(config) {
+    if (!config || !config.entity) {
+      console.warn('[SpotifyShowCard] No entity specified, defaulting to media_player.spotify');
+    }
     this._config = {
-      entity: 'media_player.spotify_TODO_ANPASSEN',
-      albumcolor_1_entity: 'input_text.spotify_albumcolor_1',
-      albumcolor_2_entity: 'input_text.spotify_albumcolor_2',
-      back_path: '/TODO_ANPASSEN',
+      entity: 'media_player.spotify',
+      back_path: '',
       back_label: 'Zurück',
       show_clock: true,
       show_volume: true,
+      albumcolor_1_entity: null,
+      albumcolor_2_entity: null,
       ...config
     };
   }
@@ -50,12 +63,29 @@ class SpotifyShowCard extends HTMLElement {
   set hass(hass) {
     this._hass = hass;
     const entity = hass.states[this._config.entity];
-    const color1 = hass.states[this._config.albumcolor_1_entity]?.state || '#e05260';
-    const color2 = hass.states[this._config.albumcolor_2_entity]?.state || '#6b46c1';
 
-    // Check if re-render is needed (only when song, state or cover actually changes)
+    // Priority 1: Check if manual color helper entities are configured
+    const manualC1 = this._config.albumcolor_1_entity ? hass.states[this._config.albumcolor_1_entity]?.state : null;
+    const manualC2 = this._config.albumcolor_2_entity ? hass.states[this._config.albumcolor_2_entity]?.state : null;
+
+    if (manualC1 && manualC2 && manualC1.startsWith('#')) {
+      this._applyColors(manualC1, manualC2);
+    } else {
+      // Priority 2: Standalone dynamic color extraction from album picture
+      const currentPicture = entity?.attributes?.entity_picture;
+      if (currentPicture && currentPicture !== this._lastPicture) {
+        this._lastPicture = currentPicture;
+        this._extractColors(currentPicture).then((colors) => {
+          if (this._lastPicture === currentPicture) {
+            this._applyColors(colors.color1, colors.color2);
+          }
+        });
+      }
+    }
+
+    // Check if re-render is needed (song, playback state, album art, or source changed)
     const stateKey = entity
-      ? `${entity.state}_${entity.attributes.media_title}_${entity.attributes.entity_picture}_${entity.attributes.shuffle}_${entity.attributes.repeat}_${color1}_${color2}`
+      ? `${entity.state}_${entity.attributes.media_title}_${entity.attributes.entity_picture}_${entity.attributes.shuffle}_${entity.attributes.repeat}_${entity.attributes.source}`
       : 'no_entity';
 
     if (this._lastStateKey !== stateKey || !this.shadowRoot.querySelector('.player-wrapper')) {
@@ -64,6 +94,124 @@ class SpotifyShowCard extends HTMLElement {
     }
 
     this._updateDynamicValues();
+  }
+
+  _applyColors(color1, color2) {
+    this._colors = { color1, color2 };
+    this.style.setProperty('--c1', color1);
+    this.style.setProperty('--c2', color2);
+    const wrapper = this.shadowRoot?.querySelector('.player-wrapper');
+    if (wrapper) {
+      wrapper.style.setProperty('--c1', color1);
+      wrapper.style.setProperty('--c2', color2);
+    }
+  }
+
+  _extractColors(pictureUrl) {
+    if (!pictureUrl) {
+      return Promise.resolve({ color1: '#e05260', color2: '#6b46c1' });
+    }
+    if (SpotifyShowCard._colorCache.has(pictureUrl)) {
+      return Promise.resolve(SpotifyShowCard._colorCache.get(pictureUrl));
+    }
+
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.crossOrigin = 'Anonymous';
+
+      const timeout = setTimeout(() => {
+        resolve({ color1: '#e05260', color2: '#6b46c1' });
+      }, 2500);
+
+      img.onload = () => {
+        clearTimeout(timeout);
+        try {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d', { willReadFrequently: true });
+          const size = 48;
+          canvas.width = size;
+          canvas.height = size;
+          ctx.drawImage(img, 0, 0, size, size);
+          const imgData = ctx.getImageData(0, 0, size, size).data;
+          const colors = this._computePalette(imgData);
+          SpotifyShowCard._colorCache.set(pictureUrl, colors);
+          resolve(colors);
+        } catch (err) {
+          // If canvas is tainted or cross-origin access is blocked, gracefully fall back
+          console.warn('[SpotifyShowCard] Fallback colors used (CORS/Canvas):', err);
+          resolve({ color1: '#e05260', color2: '#6b46c1' });
+        }
+      };
+
+      img.onerror = () => {
+        clearTimeout(timeout);
+        resolve({ color1: '#e05260', color2: '#6b46c1' });
+      };
+
+      img.src = pictureUrl;
+    });
+  }
+
+  _computePalette(data) {
+    const buckets = new Map();
+    for (let i = 0; i < data.length; i += 4) {
+      const a = data[i + 3];
+      if (a < 128) continue;
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      const lum = (max + min) / 510;
+      if (lum < 0.12 || lum > 0.88) continue; // skip extreme dark/light
+
+      const d = max - min;
+      const sat = d === 0 ? 0 : d / (lum > 0.5 ? (510 - max - min) : (max + min));
+
+      // Quantize to steps of 20
+      const qr = Math.round(r / 20) * 20;
+      const qg = Math.round(g / 20) * 20;
+      const qb = Math.round(b / 20) * 20;
+      const key = `${qr},${qg},${qb}`;
+
+      const score = 1 + (sat * 2.5);
+      const item = buckets.get(key);
+      if (item) {
+        item.score += score;
+      } else {
+        buckets.set(key, { r: qr, g: qg, b: qb, sat, lum, score });
+      }
+    }
+
+    if (buckets.size === 0) {
+      return { color1: '#e05260', color2: '#6b46c1' };
+    }
+
+    const sorted = Array.from(buckets.values()).sort((a, b) => b.score - a.score);
+    const c1 = sorted[0];
+
+    let c2 = null;
+    for (let i = 1; i < sorted.length; i++) {
+      const cand = sorted[i];
+      const dist = Math.hypot(cand.r - c1.r, cand.g - c1.g, cand.b - c1.b);
+      if (dist > 50) {
+        c2 = cand;
+        break;
+      }
+    }
+
+    if (!c2) {
+      // Monochromatic cover fallback: generate complementary shifted accent
+      c2 = {
+        r: Math.min(255, Math.max(0, Math.round(c1.r * 0.7 + 50))),
+        g: Math.min(255, Math.max(0, Math.round(c1.g * 0.6 + 30))),
+        b: Math.min(255, Math.max(0, Math.round(c1.b * 1.2 + 40)))
+      };
+    }
+
+    const toHex = (c) => '#' + [c.r, c.g, c.b].map(v => Math.min(255, Math.max(0, v)).toString(16).padStart(2, '0')).join('');
+    return { color1: toHex(c1), color2: toHex(c2) };
   }
 
   _formatTime(seconds) {
@@ -212,17 +360,51 @@ class SpotifyShowCard extends HTMLElement {
 
   _render() {
     const entity = this._hass?.states[this._config.entity];
-    const color1 = this._hass?.states[this._config.albumcolor_1_entity]?.state || '#e05260';
-    const color2 = this._hass?.states[this._config.albumcolor_2_entity]?.state || '#6b46c1';
 
-    const isPlaying = entity?.state === 'playing';
-    const title = entity?.attributes?.media_title || 'Keine Wiedergabe';
-    const artist = entity?.attributes?.media_artist || 'Spotify bereit';
-    const album = entity?.attributes?.media_album_name || '';
-    const source = entity?.attributes?.source || 'Spotify';
-    const picture = entity?.attributes?.entity_picture || '';
-    const shuffleActive = entity?.attributes?.shuffle === true;
-    const repeatMode = entity?.attributes?.repeat || 'off';
+    if (!entity) {
+      this.shadowRoot.innerHTML = `
+        <style>
+          :host {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 100vh;
+            background: #0d0f12;
+            color: #ffffff;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+          }
+          .missing-card {
+            text-align: center;
+            padding: 32px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+          }
+          code {
+            color: #e05260;
+            background: rgba(0,0,0,0.3);
+            padding: 2px 6px;
+            border-radius: 4px;
+          }
+        </style>
+        <div class="missing-card">
+          <ha-icon icon="mdi:music-off" style="--mdc-icon-size: 48px; opacity: 0.5; margin-bottom: 12px;"></ha-icon>
+          <h2 style="margin: 0 0 8px 0;">Spotify Show Card</h2>
+          <p style="margin: 0; opacity: 0.7;">Entität <code>${this._config.entity}</code> wurde nicht gefunden.</p>
+        </div>
+      `;
+      return;
+    }
+
+    const isPlaying = entity.state === 'playing';
+    const title = entity.attributes?.media_title || 'Keine Wiedergabe';
+    const artist = entity.attributes?.media_artist || 'Bereit zur Wiedergabe';
+    const album = entity.attributes?.media_album_name || '';
+    const source = entity.attributes?.source || 'Spotify';
+    const picture = entity.attributes?.entity_picture || '';
+    const shuffleActive = entity.attributes?.shuffle === true;
+    const repeatMode = entity.attributes?.repeat || 'off';
     const repeatActive = repeatMode !== 'off';
     const repeatIcon = repeatMode === 'one' ? 'mdi:repeat-once' : 'mdi:repeat';
 
@@ -236,8 +418,6 @@ class SpotifyShowCard extends HTMLElement {
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
           color: #ffffff;
           overflow: hidden;
-          --c1: ${color1};
-          --c2: ${color2};
         }
 
         * {
@@ -257,6 +437,8 @@ class SpotifyShowCard extends HTMLElement {
           padding: 24px 36px 28px 36px;
           background: #0d0f12;
           overflow: hidden;
+          --c1: ${this._colors.color1};
+          --c2: ${this._colors.color2};
         }
 
         /* Ambient Dynamic Background Glow */
@@ -698,28 +880,32 @@ class SpotifyShowCard extends HTMLElement {
         <div class="content-layer">
           <!-- Header -->
           <div class="header-bar">
-            <div class="back-pill" id="btn-back">
-              <ha-icon icon="mdi:arrow-left"></ha-icon>
-              <span>${this._config.back_label || 'Zurück'}</span>
-            </div>
+            ${this._config.back_path ? `
+              <div class="back-pill" id="btn-back">
+                <ha-icon icon="mdi:arrow-left"></ha-icon>
+                <span>${this._config.back_label || 'Zurück'}</span>
+              </div>
+            ` : '<div style="width: 1px;"></div>'}
 
             <div class="source-pill">
               <div class="source-dot"></div>
               <span>${source}</span>
             </div>
 
-            <div class="clock-display" id="clock-display">
-              <span id="clock-text">--:--</span>
-            </div>
+            ${this._config.show_clock !== false ? `
+              <div class="clock-display" id="clock-display">
+                <span id="clock-text">--:--</span>
+              </div>
+            ` : '<div style="width: 1px;"></div>'}
           </div>
 
           <!-- Main Track Details & Cover -->
           <div class="main-section">
             <div class="cover-container">
-              ${picture
-        ? `<img class="cover-art" src="${picture}" alt="Album Cover" />`
-        : `<div class="cover-placeholder"><ha-icon icon="mdi:music" style="--mdc-icon-size: 72px; opacity: 0.3;"></ha-icon></div>`
-      }
+              ${picture 
+                ? `<img class="cover-art" src="${picture}" alt="Album Cover" />` 
+                : `<div class="cover-placeholder"><ha-icon icon="mdi:music" style="--mdc-icon-size: 72px; opacity: 0.3;"></ha-icon></div>`
+              }
             </div>
 
             <div class="meta-container">
@@ -733,14 +919,16 @@ class SpotifyShowCard extends HTMLElement {
               ` : ''}
 
               <!-- Volume Control -->
-              <div class="volume-row">
-                <ha-icon class="volume-icon" id="btn-mute" icon="mdi:volume-high" style="--mdc-icon-size: 20px; cursor: pointer;"></ha-icon>
-                <div class="volume-slider-track" id="vol-track">
-                  <div class="volume-slider-fill" id="vol-fill"></div>
-                  <div class="volume-slider-thumb" id="vol-thumb"></div>
+              ${this._config.show_volume !== false ? `
+                <div class="volume-row">
+                  <ha-icon class="volume-icon" id="btn-mute" icon="mdi:volume-high" style="--mdc-icon-size: 20px; cursor: pointer;"></ha-icon>
+                  <div class="volume-slider-track" id="vol-track">
+                    <div class="volume-slider-fill" id="vol-fill"></div>
+                    <div class="volume-slider-thumb" id="vol-thumb"></div>
+                  </div>
+                  <span class="volume-text" id="vol-percent">50%</span>
                 </div>
-                <span class="volume-text" id="vol-percent">50%</span>
-              </div>
+              ` : ''}
             </div>
           </div>
 
@@ -829,8 +1017,15 @@ class SpotifyShowCard extends HTMLElement {
     };
 
     // Navigation
-    bindTap(this.shadowRoot.querySelector('#btn-back'), () => this._handleAction('back'));
-    bindTap(this.shadowRoot.querySelector('#clock-display'), () => this._handleAction('back'));
+    const btnBack = this.shadowRoot.querySelector('#btn-back');
+    if (btnBack) {
+      bindTap(btnBack, () => this._handleAction('back'));
+    }
+
+    const clockDisplay = this.shadowRoot.querySelector('#clock-display');
+    if (clockDisplay && this._config.back_path) {
+      bindTap(clockDisplay, () => this._handleAction('back'));
+    }
 
     // Controls
     bindTap(this.shadowRoot.querySelector('#btn-play'), () => this._handleAction('play_pause'));
@@ -875,8 +1070,8 @@ class SpotifyShowCard extends HTMLElement {
       seekArea.addEventListener('mousedown', (e) => {
         this._isDragging = true;
         handleSeek(e);
-        const onMouseMove = (ev) => {
-          if (this._isDragging) handleSeek(ev);
+        const onMouseMove = (e) => {
+          if (this._isDragging) handleSeek(e);
         };
         const onMouseUp = () => {
           document.removeEventListener('mousemove', onMouseMove);
@@ -937,5 +1132,5 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: 'spotify-show-card',
   name: 'Spotify Show Card',
-  description: 'Full-screen hi-fi Spotify player card for tablets and Echo Show displays'
+  description: 'Full-screen hi-fi Spotify player card with automatic cover color glow'
 });
