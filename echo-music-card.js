@@ -127,7 +127,7 @@ class EchoMusicCard extends HTMLElement {
 
     const seekbarFill = this.shadowRoot?.querySelector('#progress-bar-fill');
     if (seekbarFill) {
-      seekbarFill.style.background = `linear-gradient(90deg, ${brightColor1} 0%, ${color2} 100%)`;
+      seekbarFill.style.background = `linear-gradient(90deg, ${color2} 0%, ${brightColor1} 100%)`;
     }
 
     const coverArt = this.shadowRoot?.querySelector('.cover-art');
@@ -164,14 +164,14 @@ class EchoMusicCard extends HTMLElement {
       const hue2rgb = (p, q, t) => {
         if (t < 0) t += 1;
         if (t > 1) t -= 1;
-        if (t < 1/6) return p + (q - p) * 6 * t;
-        if (t < 1/2) return q;
-        if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+        if (t < 1 / 6) return p + (q - p) * 6 * t;
+        if (t < 1 / 2) return q;
+        if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
         return p;
       };
-      r = hue2rgb(p, q, h + 1/3);
+      r = hue2rgb(p, q, h + 1 / 3);
       g = hue2rgb(p, q, h);
-      b = hue2rgb(p, q, h - 1/3);
+      b = hue2rgb(p, q, h - 1 / 3);
     }
     return {
       r: Math.round(r * 255),
@@ -181,16 +181,16 @@ class EchoMusicCard extends HTMLElement {
   }
 
   _ensureContrast(hex, minL = 0.54, minS = 0.65) {
-    if (!hex || typeof hex !== 'string' || !hex.startsWith('#')) return '#1ed760';
+    if (!hex || typeof hex !== 'string' || !hex.startsWith('#')) return '#64748b';
     let r = parseInt(hex.slice(1, 3), 16) || 0;
     let g = parseInt(hex.slice(3, 5), 16) || 0;
     let b = parseInt(hex.slice(5, 7), 16) || 0;
     const hsl = this._rgbToHsl(r, g, b);
-    if (hsl.s > 0.1) {
+    if (hsl.s > 0.18) {
       hsl.l = Math.max(minL, Math.min(0.72, hsl.l));
       hsl.s = Math.max(minS, Math.min(0.95, hsl.s));
     } else {
-      hsl.l = Math.max(0.75, hsl.l);
+      hsl.l = Math.max(0.50, Math.min(0.70, hsl.l));
     }
     const rgb = this._hslToRgb(hsl.h, hsl.s, hsl.l);
     return '#' + [rgb.r, rgb.g, rgb.b].map(v => Math.min(255, Math.max(0, v)).toString(16).padStart(2, '0')).join('');
@@ -223,7 +223,7 @@ class EchoMusicCard extends HTMLElement {
       const img = new Image();
       // CRITICAL: NEVER set crossOrigin for relative or same-origin URLs!
       const isExternal = (pictureUrl.startsWith('http://') || pictureUrl.startsWith('https://')) &&
-                         !pictureUrl.startsWith(window.location.origin);
+        !pictureUrl.startsWith(window.location.origin);
       if (isExternal) {
         img.crossOrigin = 'Anonymous';
       }
@@ -328,12 +328,12 @@ class EchoMusicCard extends HTMLElement {
     }
 
     if (buckets.size === 0 || count === 0) {
-      return { color1: '#1ed760', color2: '#124424' };
+      return { color1: '#64748b', color2: '#1e293b' };
     }
 
     // If the cover is almost completely monochromatic / greyscale (e.g. white/grey/black cover)
-    if (maxSat < 0.12) {
-      return { color1: '#1ed760', color2: '#124424' };
+    if (maxSat < 0.14) {
+      return { color1: '#64748b', color2: '#1e293b' };
     }
 
     // Sort by weighted score
@@ -359,9 +359,9 @@ class EchoMusicCard extends HTMLElement {
     }
 
     const toHex = (c) => '#' + [c.r, c.g, c.b].map(v => Math.min(255, Math.max(0, v)).toString(16).padStart(2, '0')).join('');
-    return { 
-      color1: this._ensureContrast(toHex(c1), 0.54, 0.65), 
-      color2: toHex(c2) 
+    return {
+      color1: this._ensureContrast(toHex(c1), 0.54, 0.65),
+      color2: toHex(c2)
     };
   }
 
@@ -879,7 +879,7 @@ class EchoMusicCard extends HTMLElement {
           top: 0;
           height: 100%;
           border-radius: 3px;
-          background: linear-gradient(90deg, var(--c1) 0%, var(--c2) 100%);
+          background: linear-gradient(90deg, var(--c2) 0%, var(--c1) 100%);
           width: 0%;
           pointer-events: none;
         }
@@ -1066,10 +1066,10 @@ class EchoMusicCard extends HTMLElement {
           <!-- Main Track Details & Cover -->
           <div class="main-section">
             <div class="cover-container">
-              ${picture 
-                ? `<img class="cover-art" src="${picture}" alt="Album Cover" />` 
-                : `<div class="cover-placeholder"><ha-icon icon="mdi:music" style="--mdc-icon-size: 72px; opacity: 0.3;"></ha-icon></div>`
-              }
+              ${picture
+        ? `<img class="cover-art" src="${picture}" alt="Album Cover" />`
+        : `<div class="cover-placeholder"><ha-icon icon="mdi:music" style="--mdc-icon-size: 72px; opacity: 0.3;"></ha-icon></div>`
+      }
             </div>
 
             <div class="meta-container">
@@ -1321,7 +1321,7 @@ customElements.define('echo-music-card', EchoMusicCard);
 
 // Backward compatibility alias so existing configs continue to work seamlessly
 if (!customElements.get('spotify-show-card')) {
-  customElements.define('spotify-show-card', class extends EchoMusicCard {});
+  customElements.define('spotify-show-card', class extends EchoMusicCard { });
 }
 window.customCards = window.customCards || [];
 window.customCards.push({
