@@ -17,7 +17,7 @@ class SpotifyShowCard extends HTMLElement {
     this._timer = null;
     this._lastStateKey = null;
     this._lastPicture = null;
-    this._colors = { color1: '#e05260', color2: '#6b46c1' };
+    this._colors = { color1: '#64748b', color2: '#1e293b' };
   }
 
   // Global cache across renders and card instances
@@ -64,11 +64,11 @@ class SpotifyShowCard extends HTMLElement {
     this._hass = hass;
     const entity = hass.states[this._config.entity];
 
-    // Priority 1: Check if manual color helper entities are configured
+    // Priority 1: Check if manual color helper entities are configured and valid
     const manualC1 = this._config.albumcolor_1_entity ? hass.states[this._config.albumcolor_1_entity]?.state : null;
     const manualC2 = this._config.albumcolor_2_entity ? hass.states[this._config.albumcolor_2_entity]?.state : null;
 
-    if (manualC1 && manualC2 && manualC1.startsWith('#')) {
+    if (manualC1 && manualC2 && manualC1.startsWith('#') && manualC2.startsWith('#')) {
       this._applyColors(manualC1, manualC2);
     } else {
       // Priority 2: Standalone dynamic color extraction from album picture
@@ -76,7 +76,7 @@ class SpotifyShowCard extends HTMLElement {
       if (currentPicture && currentPicture !== this._lastPicture) {
         this._lastPicture = currentPicture;
         this._extractColors(currentPicture).then((colors) => {
-          if (this._lastPicture === currentPicture) {
+          if (this._lastPicture === currentPicture && colors) {
             this._applyColors(colors.color1, colors.color2);
           }
         });
@@ -100,113 +100,197 @@ class SpotifyShowCard extends HTMLElement {
     this._colors = { color1, color2 };
     this.style.setProperty('--c1', color1);
     this.style.setProperty('--c2', color2);
+
     const wrapper = this.shadowRoot?.querySelector('.player-wrapper');
     if (wrapper) {
       wrapper.style.setProperty('--c1', color1);
       wrapper.style.setProperty('--c2', color2);
     }
+
+    // Explicitly update background style for older WebViews (e.g. Echo Show Silk)
+    const ambientBg = this.shadowRoot?.querySelector('.ambient-bg');
+    if (ambientBg) {
+      ambientBg.style.background = `
+        radial-gradient(circle at 25% 40%, ${color1} 0%, transparent 45%),
+        radial-gradient(circle at 75% 60%, ${color2} 0%, transparent 45%),
+        radial-gradient(circle at 50% 10%, rgba(255,255,255,0.06) 0%, transparent 50%),
+        #0b0d10
+      `;
+    }
+
+    const playPauseBtn = this.shadowRoot?.querySelector('.btn-play-pause');
+    if (playPauseBtn) {
+      playPauseBtn.style.background = `linear-gradient(135deg, ${color1} 0%, ${color2} 100%)`;
+      playPauseBtn.style.boxShadow = `0 8px 24px -4px ${color1}, 0 4px 12px rgba(0,0,0,0.5)`;
+    }
+
+    const seekbarFill = this.shadowRoot?.querySelector('#progress-bar-fill');
+    if (seekbarFill) {
+      seekbarFill.style.background = `linear-gradient(90deg, ${color1} 0%, ${color2} 100%)`;
+    }
+
+    const coverArt = this.shadowRoot?.querySelector('.cover-art');
+    if (coverArt) {
+      coverArt.style.boxShadow = `0 16px 40px -10px rgba(0,0,0,0.7), 0 24px 60px -15px ${color1}`;
+    }
   }
 
   _extractColors(pictureUrl) {
     if (!pictureUrl) {
-      return Promise.resolve({ color1: '#e05260', color2: '#6b46c1' });
+      return Promise.resolve({ color1: '#64748b', color2: '#1e293b' });
     }
     if (SpotifyShowCard._colorCache.has(pictureUrl)) {
       return Promise.resolve(SpotifyShowCard._colorCache.get(pictureUrl));
     }
 
     return new Promise((resolve) => {
+      // 1. Check if the image element is already rendered and loaded in DOM
+      const domImg = this.shadowRoot?.querySelector('.cover-art');
+      if (domImg && domImg.src.includes(pictureUrl) && domImg.complete && domImg.naturalWidth > 0) {
+        try {
+          const colors = this._extractFromCanvas(domImg);
+          if (colors) {
+            SpotifyShowCard._colorCache.set(pictureUrl, colors);
+            return resolve(colors);
+          }
+        } catch (e) {
+          // Fall through to offscreen loader
+        }
+      }
+
+      // 2. Offscreen Image Loader
       const img = new Image();
-      img.crossOrigin = 'Anonymous';
+      // CRITICAL: NEVER set crossOrigin for relative or same-origin URLs!
+      const isExternal = (pictureUrl.startsWith('http://') || pictureUrl.startsWith('https://')) &&
+                         !pictureUrl.startsWith(window.location.origin);
+      if (isExternal) {
+        img.crossOrigin = 'Anonymous';
+      }
 
       const timeout = setTimeout(() => {
-        resolve({ color1: '#e05260', color2: '#6b46c1' });
-      }, 2500);
+        resolve({ color1: '#64748b', color2: '#1e293b' });
+      }, 3000);
 
-      img.onload = () => {
+      const onDone = () => {
         clearTimeout(timeout);
         try {
-          const canvas = document.createElement('canvas');
-          const ctx = canvas.getContext('2d', { willReadFrequently: true });
-          const size = 48;
-          canvas.width = size;
-          canvas.height = size;
-          ctx.drawImage(img, 0, 0, size, size);
-          const imgData = ctx.getImageData(0, 0, size, size).data;
-          const colors = this._computePalette(imgData);
-          SpotifyShowCard._colorCache.set(pictureUrl, colors);
-          resolve(colors);
+          const colors = this._extractFromCanvas(img);
+          if (colors) {
+            SpotifyShowCard._colorCache.set(pictureUrl, colors);
+            resolve(colors);
+          } else {
+            resolve({ color1: '#64748b', color2: '#1e293b' });
+          }
         } catch (err) {
-          // If canvas is tainted or cross-origin access is blocked, gracefully fall back
-          console.warn('[SpotifyShowCard] Fallback colors used (CORS/Canvas):', err);
-          resolve({ color1: '#e05260', color2: '#6b46c1' });
+          console.warn('[SpotifyShowCard] Canvas extract error:', err);
+          resolve({ color1: '#64748b', color2: '#1e293b' });
         }
       };
 
-      img.onerror = () => {
+      img.onload = onDone;
+      img.onerror = (err) => {
         clearTimeout(timeout);
-        resolve({ color1: '#e05260', color2: '#6b46c1' });
+        console.warn('[SpotifyShowCard] Failed to load cover image:', pictureUrl, err);
+        resolve({ color1: '#64748b', color2: '#1e293b' });
       };
 
       img.src = pictureUrl;
+      if (img.complete && img.naturalWidth > 0) {
+        onDone();
+      }
     });
+  }
+
+  _extractFromCanvas(imageElement) {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const size = 36;
+    canvas.width = size;
+    canvas.height = size;
+    ctx.drawImage(imageElement, 0, 0, size, size);
+    const imgData = ctx.getImageData(0, 0, size, size).data;
+    return this._computePalette(imgData);
   }
 
   _computePalette(data) {
     const buckets = new Map();
+    let count = 0;
+    let maxSat = 0;
+
     for (let i = 0; i < data.length; i += 4) {
       const a = data[i + 3];
       if (a < 128) continue;
       const r = data[i];
       const g = data[i + 1];
       const b = data[i + 2];
+      count++;
 
       const max = Math.max(r, g, b);
       const min = Math.min(r, g, b);
-      const lum = (max + min) / 510;
-      if (lum < 0.12 || lum > 0.88) continue; // skip extreme dark/light
-
       const d = max - min;
-      const sat = d === 0 ? 0 : d / (lum > 0.5 ? (510 - max - min) : (max + min));
+      const lum = (max + min) / 510;
+
+      // Handle numerical instability in HSL: if RGB difference is tiny or near extremes, saturation is effectively 0
+      let sat = 0;
+      if (d >= 10 && lum >= 0.08 && lum <= 0.92) {
+        sat = d / (lum > 0.5 ? (510 - max - min) : (max + min));
+      }
+      if (sat > maxSat) maxSat = sat;
+
+      // Give high preference to saturated, vibrant colors
+      // Reduce weight of near-white and near-black backgrounds
+      let weight = 1 + (sat * 4);
+      if (lum > 0.82) {
+        weight *= 0.1; // heavily de-prioritize white album backgrounds
+      } else if (lum < 0.12) {
+        weight *= 0.2; // de-prioritize black backgrounds
+      }
 
       // Quantize to steps of 20
-      const qr = Math.round(r / 20) * 20;
-      const qg = Math.round(g / 20) * 20;
-      const qb = Math.round(b / 20) * 20;
+      const qr = Math.min(255, Math.round(r / 20) * 20);
+      const qg = Math.min(255, Math.round(g / 20) * 20);
+      const qb = Math.min(255, Math.round(b / 20) * 20);
       const key = `${qr},${qg},${qb}`;
 
-      const score = 1 + (sat * 2.5);
       const item = buckets.get(key);
       if (item) {
-        item.score += score;
+        item.score += weight;
       } else {
-        buckets.set(key, { r: qr, g: qg, b: qb, sat, lum, score });
+        buckets.set(key, { r: qr, g: qg, b: qb, sat, lum, score: weight });
       }
     }
 
-    if (buckets.size === 0) {
-      return { color1: '#e05260', color2: '#6b46c1' };
+    if (buckets.size === 0 || count === 0) {
+      return { color1: '#64748b', color2: '#1e293b' };
     }
 
-    const sorted = Array.from(buckets.values()).sort((a, b) => b.score - a.score);
-    const c1 = sorted[0];
+    // If the cover is almost completely monochromatic / greyscale (e.g. white/grey/black cover)
+    if (maxSat < 0.12) {
+      // Sleek modern monochromatic / dark slate theme
+      return { color1: '#64748b', color2: '#1e293b' };
+    }
 
+    // Sort by weighted score
+    const sorted = Array.from(buckets.values()).sort((a, b) => b.score - a.score);
+    let c1 = sorted[0];
+
+    // Find a second distinct color
     let c2 = null;
     for (let i = 1; i < sorted.length; i++) {
       const cand = sorted[i];
       const dist = Math.hypot(cand.r - c1.r, cand.g - c1.g, cand.b - c1.b);
-      if (dist > 50) {
+      if (dist > 45) {
         c2 = cand;
         break;
       }
     }
 
+    // If monochromatic within the cluster, generate a complementary shifted tone
     if (!c2) {
-      // Monochromatic cover fallback: generate complementary shifted accent
       c2 = {
-        r: Math.min(255, Math.max(0, Math.round(c1.r * 0.7 + 50))),
-        g: Math.min(255, Math.max(0, Math.round(c1.g * 0.6 + 30))),
-        b: Math.min(255, Math.max(0, Math.round(c1.b * 1.2 + 40)))
+        r: Math.min(255, Math.max(0, Math.round(c1.r * 0.7 + 30))),
+        g: Math.min(255, Math.max(0, Math.round(c1.g * 0.6 + 40))),
+        b: Math.min(255, Math.max(0, Math.round(c1.b * 1.2 + 50)))
       };
     }
 
@@ -382,7 +466,7 @@ class SpotifyShowCard extends HTMLElement {
             border: 1px solid rgba(255, 255, 255, 0.1);
           }
           code {
-            color: #e05260;
+            color: #64748b;
             background: rgba(0,0,0,0.3);
             padding: 2px 6px;
             border-radius: 4px;
@@ -1033,6 +1117,32 @@ class SpotifyShowCard extends HTMLElement {
     bindTap(this.shadowRoot.querySelector('#btn-prev'), () => this._handleAction('previous'));
     bindTap(this.shadowRoot.querySelector('#btn-shuffle'), () => this._handleAction('shuffle'));
     bindTap(this.shadowRoot.querySelector('#btn-repeat'), () => this._handleAction('repeat'));
+
+    // Auto extract colors when the DOM cover image loads
+    const coverImg = this.shadowRoot.querySelector('.cover-art');
+    if (coverImg) {
+      const handleCoverLoad = () => {
+        const manualC1 = this._config.albumcolor_1_entity ? this._hass?.states[this._config.albumcolor_1_entity]?.state : null;
+        if (!manualC1 || !manualC1.startsWith('#')) {
+          try {
+            const colors = this._extractFromCanvas(coverImg);
+            if (colors) {
+              const currentPic = this._hass?.states[this._config.entity]?.attributes?.entity_picture;
+              if (currentPic) SpotifyShowCard._colorCache.set(currentPic, colors);
+              this._applyColors(colors.color1, colors.color2);
+            }
+          } catch (e) {
+            console.warn('[SpotifyShowCard] Could not sample DOM cover:', e);
+          }
+        }
+      };
+
+      if (coverImg.complete && coverImg.naturalWidth > 0) {
+        handleCoverLoad();
+      } else {
+        coverImg.addEventListener('load', handleCoverLoad);
+      }
+    }
 
     // Seekbar Interactions
     const seekArea = this.shadowRoot.querySelector('#seek-area');
