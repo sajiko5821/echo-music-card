@@ -1,5 +1,5 @@
 {
   "name": "Echo Music Card",
-  "filename": "echo-music-card.js",
-  "render_readme": true
+  "content_in_root": true,
+  "filename": "echo-music-card.js"
 }
