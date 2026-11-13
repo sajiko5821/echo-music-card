@@ -1,6 +1,6 @@
 # 🎵 Echo Music Card for Home Assistant
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/default)
+[![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/default)
 [![GitHub Release](https://img.shields.io/github/v/release/sajiko5821/echo-music-card?style=for-the-badge&color=1DB954)](https://github.com/sajiko5821/echo-music-card/releases)
 [![HACS Validation](https://img.shields.io/github/actions/workflow/status/sajiko5821/echo-music-card/validate.yml?branch=main&label=HACS%20Validation&style=for-the-badge)](https://github.com/sajiko5821/echo-music-card/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
@@ -26,23 +26,30 @@ A high-fidelity, full-screen touch player card for [Home Assistant](https://www.
 
 ## 📦 Installation via HACS (Recommended)
 
+1. Open **Home Assistant** and navigate to **HACS**.
+2. Search for **Echo Music Card** and select it.
+3. Click **Download**.
+
 ### 1-Click Install
 
-Click the badge below to directly open this repository in your Home Assistant HACS:
+Or click the badge below to directly open this repository in your Home Assistant HACS:
 
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=sajiko5821&repository=echo-music-card&category=plugin)
 
----
+<details>
+<summary><b>Fallback: Custom Repository Steps</b></summary>
 
-### Manual HACS Steps
+If the card does not appear in your HACS search yet:
 
-1. Open **Home Assistant** and navigate to **HACS** > **Frontend**.
+1. Open **Home Assistant** and navigate to **HACS**.
 2. Click the **three dots `⋮`** in the top-right corner and choose **Custom repositories**.
 3. Enter the repository details:
    - **Repository**: `https://github.com/sajiko5821/echo-music-card`
    - **Type**: `Dashboard` (or `Plugin`)
 4. Click **Add**.
 5. Find **Echo Music Card** in HACS and click **Download**.
+
+</details>
 
 ---
 

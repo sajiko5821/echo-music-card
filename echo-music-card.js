@@ -385,6 +385,16 @@ class EchoMusicCard extends HTMLElement {
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   }
 
+  _escapeHtml(value) {
+    if (value == null) return '';
+    return String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   _getCurrentPosition() {
     const entity = this._hass?.states[this._config.entity];
     if (!entity || !entity.attributes) return 0;
@@ -555,18 +565,21 @@ class EchoMusicCard extends HTMLElement {
         <div class="missing-card">
           <ha-icon icon="mdi:music-off" style="--mdc-icon-size: 48px; opacity: 0.5; margin-bottom: 12px;"></ha-icon>
           <h2 style="margin: 0 0 8px 0;">Echo Music Card</h2>
-          <p style="margin: 0; opacity: 0.7;">Entität <code>${this._config.entity}</code> wurde nicht gefunden.</p>
+          <p style="margin: 0; opacity: 0.7;">Entität <code>${this._escapeHtml(this._config.entity)}</code> wurde nicht gefunden.</p>
         </div>
       `;
       return;
     }
 
     const isPlaying = entity.state === 'playing';
-    const title = entity.attributes?.media_title || 'Keine Wiedergabe';
-    const artist = entity.attributes?.media_artist || 'Bereit zur Wiedergabe';
-    const album = entity.attributes?.media_album_name || '';
-    const source = entity.attributes?.source || 'Spotify';
-    const picture = entity.attributes?.entity_picture || '';
+    const title = this._escapeHtml(entity.attributes?.media_title || 'Keine Wiedergabe');
+    const artist = this._escapeHtml(entity.attributes?.media_artist || 'Bereit zur Wiedergabe');
+    const album = this._escapeHtml(entity.attributes?.media_album_name || '');
+    const source = this._escapeHtml(entity.attributes?.source || 'Spotify');
+    const picture = this._escapeHtml(entity.attributes?.entity_picture || '');
+    const backLabel = this._escapeHtml(this._config.back_label || 'Zurück');
+    const c1 = this._escapeHtml(this._colors.color1);
+    const c2 = this._escapeHtml(this._colors.color2);
     const shuffleActive = entity.attributes?.shuffle === true;
     const repeatMode = entity.attributes?.repeat || 'off';
     const repeatActive = repeatMode !== 'off';
@@ -601,8 +614,8 @@ class EchoMusicCard extends HTMLElement {
           padding: 24px 36px 28px 36px;
           background: #0d0f12;
           overflow: hidden;
-          --c1: ${this._colors.color1};
-          --c2: ${this._colors.color2};
+          --c1: ${c1};
+          --c2: ${c2};
         }
 
         /* Ambient Dynamic Background Glow */
@@ -1060,7 +1073,7 @@ class EchoMusicCard extends HTMLElement {
             ${this._config.back_path ? `
               <div class="back-pill" id="btn-back">
                 <ha-icon icon="mdi:arrow-left"></ha-icon>
-                <span>${this._config.back_label || 'Zurück'}</span>
+                <span>${backLabel}</span>
               </div>
             ` : '<div style="width: 1px;"></div>'}
 
