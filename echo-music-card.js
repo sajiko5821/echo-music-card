@@ -23,6 +23,105 @@ class EchoMusicCard extends HTMLElement {
   // Global cache across renders and card instances
   static _colorCache = new Map();
 
+  static _translations = {
+    en: {
+      back: 'Back',
+      no_playback: 'Nothing playing',
+      ready_to_play: 'Ready to play',
+      shuffle: 'Shuffle',
+      previous: 'Previous track',
+      play: 'Play',
+      pause: 'Pause',
+      next: 'Next track',
+      repeat: 'Repeat',
+      entity_not_found: 'Entity {entity} was not found.'
+    },
+    de: {
+      back: 'Zurück',
+      no_playback: 'Keine Wiedergabe',
+      ready_to_play: 'Bereit zur Wiedergabe',
+      shuffle: 'Zufallswiedergabe',
+      previous: 'Vorheriger Titel',
+      play: 'Wiedergabe',
+      pause: 'Pause',
+      next: 'Nächster Titel',
+      repeat: 'Wiederholung',
+      entity_not_found: 'Entität {entity} wurde nicht gefunden.'
+    },
+    fr: {
+      back: 'Retour',
+      no_playback: 'Aucune lecture',
+      ready_to_play: 'Prêt à lire',
+      shuffle: 'Aléatoire',
+      previous: 'Piste précédente',
+      play: 'Lecture',
+      pause: 'Pause',
+      next: 'Piste suivante',
+      repeat: 'Répéter',
+      entity_not_found: 'L’entité {entity} est introuvable.'
+    },
+    es: {
+      back: 'Atrás',
+      no_playback: 'Nada reproduciéndose',
+      ready_to_play: 'Listo para reproducir',
+      shuffle: 'Aleatorio',
+      previous: 'Pista anterior',
+      play: 'Reproducir',
+      pause: 'Pausa',
+      next: 'Siguiente pista',
+      repeat: 'Repetir',
+      entity_not_found: 'No se encontró la entidad {entity}.'
+    },
+    nl: {
+      back: 'Terug',
+      no_playback: 'Niets aan het afspelen',
+      ready_to_play: 'Klaar om af te spelen',
+      shuffle: 'Shuffle',
+      previous: 'Vorig nummer',
+      play: 'Afspelen',
+      pause: 'Pauzeren',
+      next: 'Volgend nummer',
+      repeat: 'Herhalen',
+      entity_not_found: 'Entiteit {entity} niet gevonden.'
+    },
+    it: {
+      back: 'Indietro',
+      no_playback: 'Nessuna riproduzione',
+      ready_to_play: 'Pronto per la riproduzione',
+      shuffle: 'Casuale',
+      previous: 'Traccia precedente',
+      play: 'Riproduci',
+      pause: 'Pausa',
+      next: 'Traccia successiva',
+      repeat: 'Ripeti',
+      entity_not_found: 'Entità {entity} non trovata.'
+    },
+    pt: {
+      back: 'Voltar',
+      no_playback: 'Nada tocando',
+      ready_to_play: 'Pronto para tocar',
+      shuffle: 'Aleatório',
+      previous: 'Faixa anterior',
+      play: 'Reproduzir',
+      pause: 'Pausar',
+      next: 'Próxima faixa',
+      repeat: 'Repetir',
+      entity_not_found: 'Entidade {entity} não encontrada.'
+    },
+    pl: {
+      back: 'Wstecz',
+      no_playback: 'Nic nie jest odtwarzane',
+      ready_to_play: 'Gotowy do odtwarzania',
+      shuffle: 'Losowo',
+      previous: 'Poprzedni utwór',
+      play: 'Odtwórz',
+      pause: 'Pauza',
+      next: 'Następny utwór',
+      repeat: 'Powtarzaj',
+      entity_not_found: 'Nie znaleziono encji {entity}.'
+    }
+  };
+
   setConfig(config) {
     if (!config || !config.entity) {
       console.warn('[EchoMusicCard] No entity specified, defaulting to media_player.spotify');
@@ -30,13 +129,40 @@ class EchoMusicCard extends HTMLElement {
     this._config = {
       entity: 'media_player.spotify',
       back_path: '',
-      back_label: 'Zurück',
+      back_label: null,
       show_clock: true,
       show_volume: true,
       albumcolor_1_entity: null,
       albumcolor_2_entity: null,
       ...config
     };
+  }
+
+  _getLanguage(hass = this._hass) {
+    const raw = hass?.language || hass?.locale?.language || 'en';
+    const normalized = String(raw).toLowerCase();
+    if (EchoMusicCard._translations[normalized]) {
+      return normalized;
+    }
+    const base = normalized.split(/[-_]/)[0];
+    return EchoMusicCard._translations[base] ? base : 'en';
+  }
+
+  _t(key) {
+    const lang = this._getLanguage();
+    return EchoMusicCard._translations[lang]?.[key]
+      || EchoMusicCard._translations.en[key]
+      || key;
+  }
+
+  _getBackLabel() {
+    if (typeof this._hass?.localize === 'function') {
+      const haBack = this._hass.localize('ui.common.back');
+      if (typeof haBack === 'string' && haBack.trim() !== '') {
+        return haBack;
+      }
+    }
+    return this._t('back');
   }
 
   connectedCallback() {
@@ -83,10 +209,11 @@ class EchoMusicCard extends HTMLElement {
       }
     }
 
-    // Check if re-render is needed (song, playback state, album art, or source changed)
+    // Check if re-render is needed (song, playback state, album art, source, or language changed)
+    const lang = this._getLanguage(hass);
     const stateKey = entity
-      ? `${entity.state}_${entity.attributes.media_title}_${entity.attributes.entity_picture}_${entity.attributes.shuffle}_${entity.attributes.repeat}_${entity.attributes.source}`
-      : 'no_entity';
+      ? `${lang}_${entity.state}_${entity.attributes.media_title}_${entity.attributes.entity_picture}_${entity.attributes.shuffle}_${entity.attributes.repeat}_${entity.attributes.source}`
+      : `no_entity_${lang}`;
 
     if (this._lastStateKey !== stateKey || !this.shadowRoot.querySelector('.player-wrapper')) {
       this._lastStateKey = stateKey;
@@ -536,6 +663,8 @@ class EchoMusicCard extends HTMLElement {
     const entity = this._hass?.states[this._config.entity];
 
     if (!entity) {
+      const notFoundMsg = this._escapeHtml(this._t('entity_not_found'))
+        .replace('{entity}', `<code>${this._escapeHtml(this._config.entity)}</code>`);
       this.shadowRoot.innerHTML = `
         <style>
           :host {
@@ -565,19 +694,27 @@ class EchoMusicCard extends HTMLElement {
         <div class="missing-card">
           <ha-icon icon="mdi:music-off" style="--mdc-icon-size: 48px; opacity: 0.5; margin-bottom: 12px;"></ha-icon>
           <h2 style="margin: 0 0 8px 0;">Echo Music Card</h2>
-          <p style="margin: 0; opacity: 0.7;">Entität <code>${this._escapeHtml(this._config.entity)}</code> wurde nicht gefunden.</p>
+          <p style="margin: 0; opacity: 0.7;">${notFoundMsg}</p>
         </div>
       `;
       return;
     }
 
     const isPlaying = entity.state === 'playing';
-    const title = this._escapeHtml(entity.attributes?.media_title || 'Keine Wiedergabe');
-    const artist = this._escapeHtml(entity.attributes?.media_artist || 'Bereit zur Wiedergabe');
+    const title = this._escapeHtml(entity.attributes?.media_title || this._t('no_playback'));
+    const artist = this._escapeHtml(entity.attributes?.media_artist || this._t('ready_to_play'));
     const album = this._escapeHtml(entity.attributes?.media_album_name || '');
     const source = this._escapeHtml(entity.attributes?.source || 'Spotify');
     const picture = this._escapeHtml(entity.attributes?.entity_picture || '');
-    const backLabel = this._escapeHtml(this._config.back_label || 'Zurück');
+    const rawBackLabel = (this._config.back_label !== null && this._config.back_label !== undefined)
+      ? this._config.back_label
+      : this._getBackLabel();
+    const backLabel = this._escapeHtml(rawBackLabel);
+    const shuffleTitle = this._escapeHtml(this._t('shuffle'));
+    const prevTitle = this._escapeHtml(this._t('previous'));
+    const playTitle = this._escapeHtml(this._t(isPlaying ? 'pause' : 'play'));
+    const nextTitle = this._escapeHtml(this._t('next'));
+    const repeatTitle = this._escapeHtml(this._t('repeat'));
     const c1 = this._escapeHtml(this._colors.color1);
     const c2 = this._escapeHtml(this._colors.color2);
     const shuffleActive = entity.attributes?.shuffle === true;
@@ -1140,23 +1277,23 @@ class EchoMusicCard extends HTMLElement {
 
             <!-- Playback Controls -->
             <div class="controls-row">
-              <button class="btn btn-secondary ${shuffleActive ? 'active' : ''}" id="btn-shuffle" title="Zufallswiedergabe">
+              <button class="btn btn-secondary ${shuffleActive ? 'active' : ''}" id="btn-shuffle" title="${shuffleTitle}">
                 <ha-icon icon="mdi:shuffle" style="--mdc-icon-size: 26px;"></ha-icon>
               </button>
 
-              <button class="btn btn-skip" id="btn-prev" title="Vorheriger Titel">
+              <button class="btn btn-skip" id="btn-prev" title="${prevTitle}">
                 <ha-icon icon="mdi:skip-previous" style="--mdc-icon-size: 40px;"></ha-icon>
               </button>
 
-              <button class="btn btn-play-pause" id="btn-play" title="${isPlaying ? 'Pause' : 'Wiedergabe'}">
+              <button class="btn btn-play-pause" id="btn-play" title="${playTitle}">
                 <ha-icon id="play-icon" icon="${isPlaying ? 'mdi:pause' : 'mdi:play'}" style="--mdc-icon-size: 44px;"></ha-icon>
               </button>
 
-              <button class="btn btn-skip" id="btn-next" title="Nächster Titel">
+              <button class="btn btn-skip" id="btn-next" title="${nextTitle}">
                 <ha-icon icon="mdi:skip-next" style="--mdc-icon-size: 40px;"></ha-icon>
               </button>
 
-              <button class="btn btn-secondary ${repeatActive ? 'active' : ''}" id="btn-repeat" title="Wiederholung">
+              <button class="btn btn-secondary ${repeatActive ? 'active' : ''}" id="btn-repeat" title="${repeatTitle}">
                 <ha-icon icon="${repeatIcon}" style="--mdc-icon-size: 26px;"></ha-icon>
               </button>
             </div>
